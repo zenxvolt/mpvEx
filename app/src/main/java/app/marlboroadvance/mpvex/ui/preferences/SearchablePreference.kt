@@ -466,6 +466,13 @@ object SearchablePreferences {
                 screen = AudioPreferencesScreen,
             ))
             add(SearchablePreference(
+                titleRes = R.string.pref_audio_system_volume_panel_title,
+                summaryRes = R.string.pref_audio_system_volume_panel_summary,
+                keywords = listOf("volume", "system", "panel", "buttons", "hardware", "native", "ui"),
+                category = "Audio",
+                screen = AudioPreferencesScreen,
+            ))
+            add(SearchablePreference(
                 titleRes = R.string.background_playback_title,
                 keywords = listOf("background", "playback", "audio", "service", "music"),
                 category = "Audio",

@@ -15,6 +15,7 @@ class AudioPreferences(
   val volumeBoostCap = preferenceStore.getInt("audio_volume_boost_cap", 30)
   val automaticBackgroundPlayback = preferenceStore.getBoolean("automatic_background_playback", false)
   val volumeNormalization = preferenceStore.getBoolean("audio_volume_normalization", false)
+  val useSystemVolumePanel = preferenceStore.getBoolean("audio_use_system_volume_panel", false)
 }
 
 enum class AudioChannels(

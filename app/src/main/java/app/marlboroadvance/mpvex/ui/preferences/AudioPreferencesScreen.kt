@@ -141,6 +141,20 @@ object AudioPreferencesScreen : Screen {
           )
           
           PreferenceDivider()
+          val useSystemVolumePanel by preferences.useSystemVolumePanel.collectAsState()
+          SwitchPreference(
+            value = useSystemVolumePanel,
+            onValueChange = { preferences.useSystemVolumePanel.set(it) },
+            title = { Text(stringResource(R.string.pref_audio_system_volume_panel_title)) },
+            summary = {
+              Text(
+                stringResource(R.string.pref_audio_system_volume_panel_summary),
+                color = MaterialTheme.colorScheme.outline,
+              )
+            },
+          )
+
+          PreferenceDivider()
           val automaticBackgroundPlayback by preferences.automaticBackgroundPlayback.collectAsState()
           SwitchPreference(
             value = automaticBackgroundPlayback,

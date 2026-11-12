@@ -2561,15 +2561,10 @@ class PlayerActivity :
         return true
       }
 
-      KeyEvent.KEYCODE_VOLUME_UP -> {
-        viewModel.changeVolumeBy(1)
-        viewModel.displayVolumeSlider()
-        return true
-      }
-
-      KeyEvent.KEYCODE_VOLUME_DOWN -> {
-        viewModel.changeVolumeBy(-1)
-        viewModel.displayVolumeSlider()
+      KeyEvent.KEYCODE_VOLUME_UP,
+      KeyEvent.KEYCODE_VOLUME_DOWN,
+        -> {
+        handleVolumeKey(raise = keyCode == KeyEvent.KEYCODE_VOLUME_UP)
         return true
       }
 
@@ -2593,6 +2588,39 @@ class PlayerActivity :
         return super.onKeyDown(keyCode, event)
       }
     }
+  }
+
+  /**
+   * Handles the hardware volume buttons.
+   *
+   * When "Use system volume panel" is enabled, the system stream volume is adjusted
+   * through [AudioManager] with [AudioManager.FLAG_SHOW_UI] so Android's native volume
+   * panel is shown. Otherwise the player's own volume slider is used.
+   */
+  private fun handleVolumeKey(raise: Boolean) {
+    val change = if (raise) 1 else -1
+
+    if (!audioPreferences.useSystemVolumePanel.get()) {
+      viewModel.changeVolumeBy(change)
+      viewModel.displayVolumeSlider()
+      return
+    }
+
+    // The system panel can't represent mpv's volume boost (>100%), so while boosted,
+    // lowering the volume first reduces the boost using the player's own slider.
+    val mpvVolume = MPVLib.getPropertyInt("volume") ?: MAX_MPV_VOLUME
+    if (!raise && mpvVolume > MAX_MPV_VOLUME) {
+      viewModel.changeVolumeBy(change)
+      viewModel.displayVolumeSlider()
+      return
+    }
+
+    audioManager.adjustStreamVolume(
+      AudioManager.STREAM_MUSIC,
+      if (raise) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER,
+      AudioManager.FLAG_SHOW_UI,
+    )
+    viewModel.currentVolume.value = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
   }
 
   /**
