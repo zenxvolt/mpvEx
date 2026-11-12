@@ -105,13 +105,11 @@ import app.marlboroadvance.mpvex.ui.player.PlayerViewModel
 import app.marlboroadvance.mpvex.ui.player.Sheets
 import app.marlboroadvance.mpvex.ui.player.VideoAspect
 import app.marlboroadvance.mpvex.ui.player.controls.components.BrightnessSlider
-import app.marlboroadvance.mpvex.ui.player.controls.components.CompactSpeedIndicator
 import app.marlboroadvance.mpvex.ui.player.controls.components.ControlsButton
 import app.marlboroadvance.mpvex.ui.player.controls.components.MultipleSpeedPlayerUpdate
 import app.marlboroadvance.mpvex.ui.player.controls.components.SeekPlayerUpdate
 import app.marlboroadvance.mpvex.ui.player.controls.components.SeekbarWithTimers
 import app.marlboroadvance.mpvex.ui.player.controls.components.SlideToUnlock
-import app.marlboroadvance.mpvex.ui.player.controls.components.SpeedControlSlider
 import app.marlboroadvance.mpvex.ui.player.controls.components.TextPlayerUpdate
 import app.marlboroadvance.mpvex.ui.player.controls.components.VolumeSlider
 import app.marlboroadvance.mpvex.ui.player.controls.components.sheets.toFixed
@@ -428,7 +426,6 @@ fun PlayerControls(
 
         LaunchedEffect(currentPlayerUpdate, aspectRatio, videoZoom) {
           if (currentPlayerUpdate is PlayerUpdates.MultipleSpeed ||
-            currentPlayerUpdate is PlayerUpdates.DynamicSpeedControl ||
             currentPlayerUpdate is PlayerUpdates.None
           ) {
             return@LaunchedEffect
@@ -457,36 +454,6 @@ fun PlayerControls(
         ) {
           when (currentPlayerUpdate) {
             is PlayerUpdates.MultipleSpeed -> MultipleSpeedPlayerUpdate(currentSpeed = holdForMultipleSpeed)
-            is PlayerUpdates.DynamicSpeedControl -> {
-              val speedUpdate = currentPlayerUpdate as PlayerUpdates.DynamicSpeedControl
-              val currentSpeed = speedUpdate.speed
-              val showDynamicSpeedOverlay by playerPreferences.showDynamicSpeedOverlay.collectAsState()
-              val shouldShowFull = speedUpdate.showFullOverlay
-              var isCollapsed by remember { mutableStateOf(false) }
-              
-              LaunchedEffect(currentSpeed, shouldShowFull) {
-                if (shouldShowFull) {
-                  isCollapsed = false
-                  delay(1500)
-                  isCollapsed = true
-                } else {
-                  isCollapsed = true
-                }
-              }
-              
-              if (showDynamicSpeedOverlay) {
-                if (isCollapsed) {
-                  // Simple compact indicator
-                  CompactSpeedIndicator(currentSpeed = currentSpeed)
-                } else {
-                  // Full speed control slider
-                  SpeedControlSlider(currentSpeed = currentSpeed)
-                }
-              } else {
-                // fallback, simple indicator
-                CompactSpeedIndicator(currentSpeed = currentSpeed)
-              }
-            }
             is PlayerUpdates.AspectRatio -> {
               val customRatiosSet by playerPreferences.customAspectRatios.collectAsState()
               val displayText = if (currentAspectRatio > 0) {

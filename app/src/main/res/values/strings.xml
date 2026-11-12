@@ -77,8 +77,6 @@
   <string name="pref_autoplay_next_video_summary">Automatically play next video when current ends</string>
   <string name="pref_auto_pip_title">Auto Picture-in-Picture</string>
   <string name="pref_auto_pip_summary">Automatically enter PIP mode when pressing home or back</string>
-  <string name="pref_dynamic_speed_overlay_title">Dynamic Speed Overlay</string>
-  <string name="pref_dynamic_speed_overlay_summary">Show advance overlay for speed control during long press and swipe</string>
   <string name="pref_show_navigation_bar_title">Show navigation bar with controls</string>
   <!-- Gesture Preferences Hardcoded -->
   <string name="pref_double_tap_seek_area_width_title">Double Tap Seek Area Width</string>
@@ -128,8 +126,8 @@
   <string name="pref_player_gestures_brightness">Brightness gestures</string>
   <string name="pref_player_gestures_volume">Volume gestures</string>
   <string name="pref_player_gestures_pinch_to_zoom">Pinch to zoom</string>
-  <string name="pref_player_gestures_horizontal_swipe_to_seek">Horizontal swipe to seek</string>
-  <string name="pref_player_gestures_horizontal_swipe_to_seek_summary">Swipe left or right on screen to seek forward or backward</string>
+  <string name="pref_player_gestures_horizontal_swipe_to_seek">Hold and swipe to seek</string>
+  <string name="pref_player_gestures_horizontal_swipe_to_seek_summary">Long press, then swipe left or right to seek backward or forward</string>
   <string name="pref_player_gestures_horizontal_swipe_sensitivity">Horizontal swipe sensitivity</string>
   <string name="pref_player_gestures_horizontal_swipe_sensitivity_summary">Adjust how much distance is covered per swipe</string>
   <string name="pref_player_gestures_hold_for_multiple_speed">Hold for multi - x speed</string>

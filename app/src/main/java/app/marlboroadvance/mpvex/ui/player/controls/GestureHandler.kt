@@ -105,7 +105,6 @@ fun GestureHandler(
     viewModel.hideSeekBar()
   }
   val multipleSpeedGesture by playerPreferences.holdForMultipleSpeed.collectAsState()
-  val showDynamicSpeedOverlay by playerPreferences.showDynamicSpeedOverlay.collectAsState()
   val brightnessGesture by playerPreferences.brightnessGesture.collectAsState()
   val volumeGesture by playerPreferences.volumeGesture.collectAsState()
   val swapVolumeAndBrightness by playerPreferences.swapVolumeAndBrightness.collectAsState()
@@ -114,11 +113,6 @@ fun GestureHandler(
   val horizontalSwipeToSeek by playerPreferences.horizontalSwipeToSeek.collectAsState()
   val horizontalSwipeSensitivity by playerPreferences.horizontalSwipeSensitivity.collectAsState()
   var isLongPressing by remember { mutableStateOf(false) }
-  var isDynamicSpeedControlActive by remember { mutableStateOf(false) }
-  var dynamicSpeedStartX by remember { mutableStateOf(0f) }
-  var dynamicSpeedStartValue by remember { mutableStateOf(2f) }
-  var lastAppliedSpeed by remember { mutableStateOf(2f) }
-  var hasSwipedEnough by remember { mutableStateOf(false) }
   var longPressTriggeredDuringTouch by remember { mutableStateOf(false) }
   var isVerticalGestureActive by remember { mutableStateOf(false) }
   val currentVolume by viewModel.currentVolume.collectAsState()
@@ -328,8 +322,12 @@ fun GestureHandler(
           } while (event.changes.any { it.pressed })
         }
       }
-      .pointerInput(areControlsLocked, multipleSpeedGesture, brightnessGesture, volumeGesture) {
-        if ((!brightnessGesture && !volumeGesture && multipleSpeedGesture <= 0f) || areControlsLocked) return@pointerInput
+      .pointerInput(areControlsLocked, multipleSpeedGesture, brightnessGesture, volumeGesture, horizontalSwipeToSeek) {
+        if ((!brightnessGesture && !volumeGesture && multipleSpeedGesture <= 0f && !horizontalSwipeToSeek) ||
+          areControlsLocked
+        ) {
+          return@pointerInput
+        }
 
         awaitEachGesture {
           val down = awaitFirstDown(requireUnconsumed = false)
@@ -351,48 +349,43 @@ fun GestureHandler(
           val volumeGestureSens = 0.017f
           val mpvVolumeGestureSens = 0.017f
 
-          // Original speed for long press
+          // Fast forward (hold) state
           var originalSpeed = playbackSpeed ?: 1f
+          var isFastForwarding = false
 
-          // Track long press separately
+          // Hold-and-swipe seek state
+          var isSeeking = false
+          var seekStartX = 0f
+          var initialVideoPosition = 0f
+          var wasPlayerAlreadyPaused = false
+
+          // Long press: holding still fast forwards; holding then swiping horizontally seeks.
           var longPressTriggered = false
           val longPressDelay = 500L
-          var longPressJob = coroutineScope.launch {
+          val longPressJob = coroutineScope.launch {
             delay(longPressDelay)
-            if (!longPressTriggered && paused == false) {
-              val distance = sqrt(
-                (down.position.x - startPosition.x) * (down.position.x - startPosition.x) +
-                (down.position.y - startPosition.y) * (down.position.y - startPosition.y)
-              )
-              // Only trigger if still within tap threshold
-              if (distance < 10f && multipleSpeedGesture > 0f) {
-                longPressTriggered = true
-                isLongPressing = true
-                longPressTriggeredDuringTouch = true
-                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                originalSpeed = playbackSpeed ?: 1f
-                // Ramp speed up incrementally to avoid audio filter stutter
-                val startSpeed = originalSpeed
-                val targetSpeed = multipleSpeedGesture
-                val steps = 5
-                val stepDelay = 16L // ~one frame per step
-                for (i in 1..steps) {
-                  val t = i.toFloat() / steps
-                  val intermediateSpeed = startSpeed + (targetSpeed - startSpeed) * t
-                  MPVLib.setPropertyFloat("speed", intermediateSpeed)
-                  if (i < steps) delay(stepDelay)
-                }
+            val willFastForward = multipleSpeedGesture > 0f && paused == false
+            if (!willFastForward && !horizontalSwipeToSeek) return@launch
 
-                if (showDynamicSpeedOverlay) {
-                  isDynamicSpeedControlActive = true
-                  hasSwipedEnough = false
-                  dynamicSpeedStartX = startPosition.x
-                  dynamicSpeedStartValue = multipleSpeedGesture
-                  lastAppliedSpeed = multipleSpeedGesture
-                  viewModel.playerUpdate.update { PlayerUpdates.DynamicSpeedControl(multipleSpeedGesture, false) }
-                } else {
-                  viewModel.playerUpdate.update { PlayerUpdates.MultipleSpeed }
-                }
+            longPressTriggered = true
+            isLongPressing = true
+            longPressTriggeredDuringTouch = true
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+
+            if (willFastForward) {
+              isFastForwarding = true
+              originalSpeed = playbackSpeed ?: 1f
+              viewModel.playerUpdate.update { PlayerUpdates.MultipleSpeed }
+              // Ramp speed up incrementally to avoid audio filter stutter
+              val startSpeed = originalSpeed
+              val targetSpeed = multipleSpeedGesture
+              val steps = 5
+              val stepDelay = 16L // ~one frame per step
+              for (i in 1..steps) {
+                val t = i.toFloat() / steps
+                val intermediateSpeed = startSpeed + (targetSpeed - startSpeed) * t
+                MPVLib.setPropertyFloat("speed", intermediateSpeed)
+                if (i < steps) delay(stepDelay)
               }
             }
           }
@@ -412,27 +405,43 @@ fun GestureHandler(
 
                   // Determine gesture type based on initial drag direction
                   if (gestureType == null && (abs(deltaX) > 20f || abs(deltaY) > 20f)) {
-                    // Cancel long press if drag started
+                    // Moving before the long press fires cancels it, so a plain swipe never seeks
                     longPressJob.cancel()
 
-                    // Check if we're in long press mode with dynamic speed control
-                    if (isLongPressing && isDynamicSpeedControlActive && showDynamicSpeedOverlay && abs(deltaX) > 10f) {
-                      gestureType = "speed_control"
-                    } else {
-                      gestureType = if (abs(deltaX) > abs(deltaY) * 1.5f) {
-                        "horizontal"
-                      } else if (abs(deltaY) > abs(deltaX) * 1.5f) {
-                        "vertical"
+                    gestureType = if (longPressTriggered) {
+                      if (horizontalSwipeToSeek && abs(deltaX) > abs(deltaY) && panelShown == Panels.None) {
+                        "seek"
                       } else {
-                        null
+                        "hold"
                       }
+                    } else if (abs(deltaX) > abs(deltaY) * 1.5f) {
+                      "horizontal"
+                    } else if (abs(deltaY) > abs(deltaX) * 1.5f) {
+                      "vertical"
+                    } else {
+                      null
                     }
 
                     // Initialize gesture-specific state
                     when (gestureType) {
-                      "speed_control" -> {
-                        dynamicSpeedStartX = currentPosition.x
-                        dynamicSpeedStartValue = MPVLib.getPropertyFloat("speed") ?: multipleSpeedGesture
+                      "seek" -> {
+                        // Stop fast forwarding and switch to seeking
+                        if (isFastForwarding) {
+                          isFastForwarding = false
+                          MPVLib.setPropertyFloat("speed", originalSpeed)
+                        }
+                        isSeeking = true
+                        seekStartX = currentPosition.x
+                        initialVideoPosition = position?.toFloat() ?: 0f
+
+                        // Pause before seeking to prevent decoder stalls
+                        wasPlayerAlreadyPaused = paused ?: false
+                        if (!wasPlayerAlreadyPaused) {
+                          viewModel.pause()
+                        }
+
+                        viewModel.showSeekBar()
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                       }
                       "vertical" -> {
                         if ((brightnessGesture || volumeGesture) && !isLongPressing) {
@@ -452,39 +461,30 @@ fun GestureHandler(
 
                   // Handle the appropriate gesture
                   when (gestureType) {
-                    "speed_control" -> {
-                      if (!showDynamicSpeedOverlay) return@forEach
-                      if (isLongPressing && isDynamicSpeedControlActive && paused == false) {
+                    "seek" -> {
+                      if (isSeeking) {
                         change.consume()
 
-                        val speedPresets = listOf(0.25f, 0.5f, 1.0f, 1.5f, 2.0f, 2.5f, 3.0f, 4.0f)
-                        val screenWidth = size.width.toFloat()
+                        val seekOffset = (currentPosition.x - seekStartX) * horizontalSwipeSensitivity
+                        val maxDuration = duration?.toFloat() ?: 0f
+                        val clampedPosition = (initialVideoPosition + seekOffset)
+                          .coerceAtLeast(0f)
+                          .coerceAtMost(maxDuration)
 
-                        val deltaX = currentPosition.x - dynamicSpeedStartX
-                        val swipeDetectionThreshold = 10.dp.toPx()
+                        // Use the same seeking mechanism as seekbar scrubbing
+                        viewModel.seekTo(clampedPosition.toInt())
 
-                        if (!hasSwipedEnough && abs(deltaX) >= swipeDetectionThreshold) {
-                          hasSwipedEnough = true
-                          viewModel.playerUpdate.update { PlayerUpdates.DynamicSpeedControl(lastAppliedSpeed, true) }
+                        val currentPos = clampedPosition.toInt()
+                        val seekDelta = (clampedPosition - initialVideoPosition).toInt()
+                        val currentTimeStr = formatSeekTime(currentPos)
+                        val deltaStr = if (seekDelta >= 0) {
+                          "+${formatSeekTime(seekDelta)}"
+                        } else {
+                          "-${formatSeekTime(-seekDelta)}"
                         }
 
-                        if (hasSwipedEnough) {
-                          val presetsRange = speedPresets.size - 1
-                          val indexDelta = (deltaX / screenWidth) * presetsRange * 3.5f
-
-                          val startIndex = speedPresets.indexOfFirst {
-                            abs(it - dynamicSpeedStartValue) < 0.01f
-                          }.takeIf { it >= 0 } ?: 4
-
-                          val newIndex = (startIndex + indexDelta.toInt()).coerceIn(0, speedPresets.size - 1)
-                          val newSpeed = speedPresets[newIndex]
-
-                          if (abs(lastAppliedSpeed - newSpeed) > 0.01f) {
-                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            lastAppliedSpeed = newSpeed
-                            MPVLib.setPropertyFloat("speed", newSpeed)
-                            viewModel.playerUpdate.update { PlayerUpdates.DynamicSpeedControl(newSpeed, true) }
-                          }
+                        viewModel.playerUpdate.update {
+                          PlayerUpdates.HorizontalSeek(currentTimeStr, deltaStr)
                         }
                       }
                     }
@@ -579,19 +579,12 @@ fun GestureHandler(
             } else if (pointerCount > 1) {
               // Multi-finger gesture detected
               longPressJob.cancel()
-              if (gestureType != null) {
-                when (gestureType) {
-                  "vertical" -> {
-                    if (brightnessGesture || volumeGesture) {
-                      isVerticalGestureActive = false
-                      startingY = 0f
-                      lastVolumeValue = currentVolume
-                      lastMPVVolumeValue = currentMPVVolume ?: 100
-                      lastBrightnessValue = currentBrightness
-                    }
-                  }
-                }
-                gestureType = null
+              if (gestureType == "vertical" && (brightnessGesture || volumeGesture)) {
+                isVerticalGestureActive = false
+                startingY = 0f
+                lastVolumeValue = currentVolume
+                lastMPVVolumeValue = currentMPVVolume ?: 100
+                lastBrightnessValue = currentBrightness
               }
               break
             }
@@ -599,11 +592,22 @@ fun GestureHandler(
 
           // Handle gesture end
           longPressJob.cancel()
+          isLongPressing = false
 
-          if (isLongPressing) {
-            isLongPressing = false
-            isDynamicSpeedControlActive = false
-            hasSwipedEnough = false
+          if (isSeeking) {
+            // Unpause if it wasn't paused before seeking
+            if (!wasPlayerAlreadyPaused) {
+              viewModel.unpause()
+            }
+            // Clear the seek overlay and hide the seekbar after a short delay
+            coroutineScope.launch {
+              delay(300)
+              viewModel.playerUpdate.update { PlayerUpdates.None }
+              viewModel.hideSeekBar()
+            }
+          }
+
+          if (isFastForwarding) {
             // Ramp speed back down incrementally to avoid audio filter stutter
             val currentSpeed = MPVLib.getPropertyFloat("speed") ?: multipleSpeedGesture
             val targetSpeed = originalSpeed
@@ -620,16 +624,12 @@ fun GestureHandler(
             viewModel.playerUpdate.update { PlayerUpdates.None }
           }
 
-          when (gestureType) {
-            "vertical" -> {
-              if (brightnessGesture || volumeGesture) {
-                isVerticalGestureActive = false
-                startingY = 0f
-                lastVolumeValue = currentVolume
-                lastMPVVolumeValue = currentMPVVolume ?: 100
-                lastBrightnessValue = currentBrightness
-              }
-            }
+          if (gestureType == "vertical" && (brightnessGesture || volumeGesture)) {
+            isVerticalGestureActive = false
+            startingY = 0f
+            lastVolumeValue = currentVolume
+            lastMPVVolumeValue = currentMPVVolume ?: 100
+            lastBrightnessValue = currentBrightness
           }
         }
       }
@@ -799,119 +799,6 @@ fun GestureHandler(
               break
             }
           } while (event.changes.any { it.pressed })
-        }
-      }
-      .pointerInput(horizontalSwipeToSeek, areControlsLocked, gesturePreferences, isVerticalGestureActive) {
-        if (!horizontalSwipeToSeek || areControlsLocked || isVerticalGestureActive) return@pointerInput
-
-        awaitEachGesture {
-          val down = awaitFirstDown(requireUnconsumed = false)
-          val startPosition = down.position
-          val startTime = System.currentTimeMillis()
-          
-          var gestureType: String? = null
-          var hasStartedSeeking = false
-          var initialVideoPosition = 0f
-          var wasPlayerAlreadyPaused = false
-          // Use the sensitivity preference instead of hardcoded value
-          val seekSensitivity = horizontalSwipeSensitivity
-          
-          do {
-            val event = awaitPointerEvent()
-            val pointerCount = event.changes.count { it.pressed }
-
-            if (pointerCount == 1) {
-              event.changes.forEach { change ->
-                if (change.pressed) {
-                  val currentPosition = change.position
-                  val deltaX = currentPosition.x - startPosition.x
-                  val deltaY = currentPosition.y - startPosition.y
-                  val timeSinceStart = System.currentTimeMillis() - startTime
-
-                  // Only activate if this is clearly a horizontal gesture
-                  // and not conflicting with other gestures
-                  if (gestureType == null && 
-                      abs(deltaX) > 30f && 
-                      abs(deltaX) > abs(deltaY) * 2f && // Must be strongly horizontal
-                      timeSinceStart > 100L && // Avoid conflicts with double-tap
-                      !isLongPressing && // Don't conflict with long press
-                      !isDynamicSpeedControlActive && // Don't conflict with speed control
-                      panelShown == Panels.None) { // Only when no panels are shown
-                    
-                    gestureType = "horizontal_seek"
-                    hasStartedSeeking = true
-                    initialVideoPosition = position?.toFloat() ?: 0f
-                    
-                    // Pause before seeking to prevent decoder stalls
-                    wasPlayerAlreadyPaused = paused ?: false
-                    if (!wasPlayerAlreadyPaused) {
-                      viewModel.pause()
-                    }
-                    
-                    // Show seekbar and start seeking mode (same as seekbar scrubbing)
-                    viewModel.showSeekBar()
-                    change.consume()
-                  }
-
-                  if (gestureType == "horizontal_seek" && hasStartedSeeking) {
-                    // Calculate seek amount based on horizontal movement
-                    val seekAmount = deltaX * seekSensitivity
-                    val targetPosition = (initialVideoPosition + seekAmount).coerceAtLeast(0f)
-                    val maxDuration = duration?.toFloat() ?: 0f
-                    val clampedPosition = targetPosition.coerceAtMost(maxDuration)
-                    
-                    // Use the same seeking mechanism as seekbar scrubbing
-                    // This will update the seekbar position and provide live preview
-                    viewModel.seekTo(clampedPosition.toInt())
-                    
-                    // Format and display time position updates
-                    val currentPos = clampedPosition.toInt()
-                    val seekDelta = (clampedPosition - initialVideoPosition).toInt()
-                    
-                    val currentTimeStr = formatSeekTime(currentPos)
-                    
-                    // Format seek delta with +/- prefix
-                    val deltaStr = if (seekDelta >= 0) {
-                      "+${formatSeekTime(seekDelta)}"
-                    } else {
-                      "-${formatSeekTime(-seekDelta)}"
-                    }
-                    
-                    // Use PlayerUpdates system like zoom updates
-                    viewModel.playerUpdate.update { 
-                      PlayerUpdates.HorizontalSeek(currentTimeStr, deltaStr)
-                    }
-                    
-                    change.consume()
-                  }
-                }
-              }
-            } else if (pointerCount > 1) {
-              // Multi-finger detected, cancel horizontal seek
-              if (hasStartedSeeking) {
-                hasStartedSeeking = false
-                // Clean up seeking state without showing controls
-                viewModel.playerUpdate.update { PlayerUpdates.None }
-                viewModel.hideSeekBar()
-              }
-              break
-            }
-          } while (event.changes.any { it.pressed })
-
-          // Apply the final seek when gesture ends
-          if (hasStartedSeeking) {
-            // Unpause if it wasn't paused before seeking
-            if (!wasPlayerAlreadyPaused) {
-              viewModel.unpause()
-            }
-            
-            // Clear the horizontal seek update and hide seekbar after a short delay
-            coroutineScope.launch {
-              delay(300)
-              viewModel.playerUpdate.update { PlayerUpdates.None }
-              viewModel.hideSeekBar()
-            }
-          }
         }
       },
   )

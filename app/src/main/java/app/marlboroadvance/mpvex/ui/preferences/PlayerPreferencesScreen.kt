@@ -284,6 +284,12 @@ object PlayerPreferencesScreen : Screen {
                 value = horizontalSwipeToSeek,
                 onValueChange = preferences.horizontalSwipeToSeek::set,
                 title = { Text(stringResource(R.string.pref_player_gestures_horizontal_swipe_to_seek)) },
+                summary = {
+                  Text(
+                    stringResource(R.string.pref_player_gestures_horizontal_swipe_to_seek_summary),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
               )
               
               PreferenceDivider()
@@ -325,21 +331,6 @@ object PlayerPreferencesScreen : Screen {
                 },
                 onSliderValueChange = { preferences.holdForMultipleSpeed.set(it.toFixed(2)) },
                 sliderValue = holdForMultipleSpeed,
-              )
-              
-              PreferenceDivider()
-              
-              val showDynamicSpeedOverlay by preferences.showDynamicSpeedOverlay.collectAsState()
-              SwitchPreference(
-                value = showDynamicSpeedOverlay,
-                onValueChange = preferences.showDynamicSpeedOverlay::set,
-                title = { Text("Dynamic Speed Overlay") },
-                summary = { 
-                  Text(
-                    "Show advance overlay for speed control during long press and swipe",
-                    color = MaterialTheme.colorScheme.outline,
-                  ) 
-                }
               )
             }
           }

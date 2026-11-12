@@ -204,7 +204,8 @@ object SearchablePreferences {
             ))
             add(SearchablePreference(
                 titleRes = R.string.pref_player_gestures_horizontal_swipe_to_seek,
-                keywords = listOf("horizontal", "swipe", "seek", "gesture", "left", "right"),
+                summaryRes = R.string.pref_player_gestures_horizontal_swipe_to_seek_summary,
+                keywords = listOf("horizontal", "swipe", "seek", "gesture", "left", "right", "hold", "long press"),
                 category = "Player",
                 screen = PlayerPreferencesScreen,
             ))
@@ -218,13 +219,6 @@ object SearchablePreferences {
             add(SearchablePreference(
                 titleRes = R.string.pref_player_gestures_hold_for_multiple_speed,
                 keywords = listOf("hold", "speed", "multiple", "playback", "tempo", "rate"),
-                category = "Player",
-                screen = PlayerPreferencesScreen,
-            ))
-            add(SearchablePreference(
-                titleRes = R.string.pref_dynamic_speed_overlay_title,
-                summaryRes = R.string.pref_dynamic_speed_overlay_summary,
-                keywords = listOf("dynamic", "speed", "overlay", "control", "hold", "swipe"),
                 category = "Player",
                 screen = PlayerPreferencesScreen,
             ))
